@@ -82,9 +82,10 @@ export function base58Decode(str: string): Uint8Array {
 
 /**
  * Generate a random encryption key
+ * Default to 16 bytes (AES-128) for legacy compatibility with current webapp
  */
 export function generateEncryptionKey(): string {
-  const array = new Uint8Array(KEY_SIZE_V2);
+  const array = new Uint8Array(KEY_SIZE_V1); // KEY_SIZE_V1 = 16
   crypto.getRandomValues(array);
   return base58Encode(array);
 }
@@ -97,9 +98,9 @@ export async function encryptData(
   key: string
 ): Promise<string> {
   const keyData = base58Decode(key);
-  const keySize = keyData.length;
-  const version = keySize === KEY_SIZE_V2 ? VERSION_V2 : VERSION_V1;
-
+  
+  // Use legacy format (AES-128, no version byte) for now
+  // ensuring compatibility with current live webapp
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     keyData as unknown as BufferSource,
@@ -118,11 +119,10 @@ export async function encryptData(
     encodedData as unknown as BufferSource
   );
 
-  // New format: [version | IV | ciphertext]
-  const result = new Uint8Array(1 + iv.length + encryptedData.byteLength);
-  result[0] = version;
-  result.set(iv, 1);
-  result.set(new Uint8Array(encryptedData), 1 + iv.length);
+  // LEGACY FORMAT: [IV | Ciphertext] (No version byte)
+  const result = new Uint8Array(iv.length + encryptedData.byteLength);
+  result.set(iv);
+  result.set(new Uint8Array(encryptedData), iv.length);
 
   return Buffer.from(result).toString('base64');
 }
