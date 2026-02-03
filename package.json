@@ -1,19 +1,33 @@
 {
-  "name": "snappwd-cli",
+  "name": "@snappwd/cli",
   "version": "1.0.0",
-  "description": "",
+  "description": "Official CLI for SnapPwd - Secure, zero-knowledge secret sharing",
   "main": "dist/index.js",
   "bin": {
     "snappwd": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "prepublishOnly": "npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "security",
+    "encryption",
+    "password",
+    "secret",
+    "sharing",
+    "cli"
+  ],
+  "author": "SnapPwd",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@types/mime-types": "^3.0.1",
