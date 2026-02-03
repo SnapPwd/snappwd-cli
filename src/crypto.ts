@@ -2,6 +2,12 @@ import { webcrypto } from 'node:crypto';
 
 const crypto = webcrypto as unknown as Crypto;
 
+const KEY_SIZE_V1 = 16; // AES-128 (legacy)
+const KEY_SIZE_V2 = 32; // AES-256 (new)
+const IV_SIZE = 12;
+const VERSION_V1 = 1;
+const VERSION_V2 = 2;
+
 const BASE58_ALPHABET =
   "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -78,7 +84,7 @@ export function base58Decode(str: string): Uint8Array {
  * Generate a random encryption key
  */
 export function generateEncryptionKey(): string {
-  const array = new Uint8Array(16);
+  const array = new Uint8Array(KEY_SIZE_V2);
   crypto.getRandomValues(array);
   return base58Encode(array);
 }
@@ -91,6 +97,9 @@ export async function encryptData(
   key: string
 ): Promise<string> {
   const keyData = base58Decode(key);
+  const keySize = keyData.length;
+  const version = keySize === KEY_SIZE_V2 ? VERSION_V2 : VERSION_V1;
+
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     keyData as unknown as BufferSource,
@@ -99,7 +108,7 @@ export async function encryptData(
     ["encrypt"]
   );
 
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_SIZE));
   const encoder = new TextEncoder();
   const encodedData = encoder.encode(plaintext);
 
@@ -109,9 +118,11 @@ export async function encryptData(
     encodedData as unknown as BufferSource
   );
 
-  const result = new Uint8Array(iv.length + encryptedData.byteLength);
-  result.set(iv);
-  result.set(new Uint8Array(encryptedData), iv.length);
+  // New format: [version | IV | ciphertext]
+  const result = new Uint8Array(1 + iv.length + encryptedData.byteLength);
+  result[0] = version;
+  result.set(iv, 1);
+  result.set(new Uint8Array(encryptedData), 1 + iv.length);
 
   return Buffer.from(result).toString('base64');
 }
@@ -133,13 +144,25 @@ export async function decryptData(
   );
 
   const encryptedData = new Uint8Array(Buffer.from(encryptedBase64, 'base64'));
-  const iv = encryptedData.slice(0, 12);
-  const data = encryptedData.slice(12);
+  
+  let iv: Uint8Array;
+  let ciphertext: Uint8Array;
+
+  // Detect format: versioned (first byte is VERSION_V1 or VERSION_V2) or legacy
+  if (encryptedData[0] === VERSION_V1 || encryptedData[0] === VERSION_V2) {
+    // Versioned format: [version | IV | ciphertext]
+    iv = encryptedData.slice(1, 1 + IV_SIZE);
+    ciphertext = encryptedData.slice(1 + IV_SIZE);
+  } else {
+    // Legacy format: [IV | ciphertext]
+    iv = encryptedData.slice(0, IV_SIZE);
+    ciphertext = encryptedData.slice(IV_SIZE);
+  }
 
   const decryptedData = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: iv as unknown as BufferSource },
     cryptoKey,
-    data as unknown as BufferSource
+    ciphertext as unknown as BufferSource
   );
 
   const decoder = new TextDecoder();
@@ -162,7 +185,7 @@ export async function encryptFileBuffer(
     ["encrypt"]
   );
 
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_SIZE));
 
   const encryptedData = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: iv as unknown as BufferSource },
