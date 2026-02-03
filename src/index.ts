@@ -20,7 +20,14 @@ program
   .name('snappwd')
   .description('CLI for SnapPwd - Secure password and secret sharing')
   .version('1.0.0')
-  .option('--api-url <url>', 'Override default API URL', 'https://snappwd.io/api/v1');
+  .option('--api-url <url>', 'Override default API URL', 'https://api.snappwd.io/v1');
+
+const getWebUrl = (apiUrl: string) => {
+  if (apiUrl.includes('api.snappwd.io')) {
+    return 'https://snappwd.io';
+  }
+  return apiUrl.replace(/\/api\/v1\/?$/, '');
+};
 
 program
   .command('put <text>')
@@ -42,10 +49,7 @@ program
       const response = await api.createSecret(encryptedSecret, expiration);
 
       // 4. Output URL
-      // Construct URL based on API URL domain or default to snappwd.io if strictly API url is overridden but base is different?
-      // Actually, if user overrides API URL, they might be self-hosting.
-      // Usually the webapp is at root.
-      const baseUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
+      const baseUrl = getWebUrl(apiUrl);
       const shareUrl = `${baseUrl}/g/${response.secretId}#${key}`;
 
       console.log(`Secret created successfully!`);
@@ -95,8 +99,9 @@ program
       );
 
       // 4. Output URL
-      const baseUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
-      const shareUrl = `${baseUrl}/file/${response.fileId}#${key}`;
+      const baseUrl = getWebUrl(apiUrl);
+      // Files now share the /g/ route
+      const shareUrl = `${baseUrl}/g/${response.fileId}#${key}`;
 
       console.log(`File uploaded successfully!`);
       console.log(`URL: ${shareUrl}`);
@@ -120,21 +125,38 @@ program
       const url = new URL(urlStr);
       const key = url.hash.replace('#', '');
       const pathParts = url.pathname.split('/');
-      // Expected: /g/{id} or /file/{id}
       
-      const type = pathParts[1]; // 'g' or 'file'
-      const id = pathParts[2];
+      // Look for ID in path segments
+      // Typical paths: /g/sp-123 or /file/spf-123 (legacy)
+      const gIndex = pathParts.indexOf('g');
+      const fileIndex = pathParts.indexOf('file');
+      
+      let id: string | undefined;
+      
+      if (gIndex !== -1 && pathParts[gIndex + 1]) {
+        id = pathParts[gIndex + 1];
+      } else if (fileIndex !== -1 && pathParts[fileIndex + 1]) {
+        id = pathParts[fileIndex + 1];
+      }
+
+      if (!id) {
+         // Fallback: try last segment if it looks like an ID
+         const last = pathParts[pathParts.length - 1];
+         if (last && (last.startsWith('sp-') || last.startsWith('spf-'))) {
+             id = last;
+         }
+      }
 
       if (!key) {
         throw new Error('No encryption key found in URL fragment');
       }
 
-      if (type === 'g') {
-        // Text Secret
-        const response = await api.getSecret(id);
-        const secret = await decryptData(response.encryptedSecret, key);
-        console.log(secret);
-      } else if (type === 'file') {
+      if (!id) {
+        throw new Error('Could not parse secret ID from URL');
+      }
+
+      // Detect type by ID prefix
+      if (id.startsWith('spf-')) {
         // File Secret
         const response = await api.getFile(id);
         
@@ -148,7 +170,10 @@ program
         
         console.log(`File saved to: ${outputPath}`);
       } else {
-        throw new Error('Unknown secret type in URL (expected /g/ or /file/)');
+        // Text Secret (default)
+        const response = await api.getSecret(id);
+        const secret = await decryptData(response.encryptedSecret, key);
+        console.log(secret);
       }
 
     } catch (error: any) {
