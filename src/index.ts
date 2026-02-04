@@ -163,7 +163,6 @@ program
 
       const meta = response as any; // Cast to access Peek properties safely
       
-      console.log('--- Secret Metadata ---');
       console.log(`ID: ${id}`);
       
       if (meta.createdAt > 0) {
