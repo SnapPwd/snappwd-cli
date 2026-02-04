@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name('snappwd')
   .description('CLI for SnapPwd - Secure password and secret sharing')
-  .version('1.2.0')
+  .version('1.3.0')
   .option('--api-url <url>', 'Override default API URL', 'https://api.snappwd.io/v1');
 
 const getWebUrl = (apiUrl: string) => {
@@ -115,7 +115,8 @@ program
 program
   .command('peek <url>')
   .description('View secret metadata (TTL, creation time) without burning it')
-  .action(async (urlStr) => {
+  .option('-j, --json', 'Output valid JSON')
+  .action(async (urlStr, options) => {
     try {
       const apiUrl = program.opts().apiUrl;
       const api = new SnapPwdApi(apiUrl);
@@ -163,6 +164,16 @@ program
 
       const meta = response as any; // Cast to access Peek properties safely
       
+      if (options.json) {
+        console.log(JSON.stringify({
+          id,
+          createdAt: meta.createdAt,
+          ttlSeconds: meta.ttlSeconds,
+          metadata: meta.metadata || null
+        }, null, 2));
+        return;
+      }
+
       console.log(`ID: ${id}`);
       
       if (meta.createdAt > 0) {
