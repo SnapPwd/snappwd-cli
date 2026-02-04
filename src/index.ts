@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name('snappwd')
   .description('CLI for SnapPwd - Secure password and secret sharing')
-  .version('1.0.0')
+  .version('1.2.0')
   .option('--api-url <url>', 'Override default API URL', 'https://api.snappwd.io/v1');
 
 const getWebUrl = (apiUrl: string) => {
@@ -113,6 +113,80 @@ program
   });
 
 program
+  .command('peek <url>')
+  .description('View secret metadata (TTL, creation time) without burning it')
+  .action(async (urlStr) => {
+    try {
+      const apiUrl = program.opts().apiUrl;
+      const api = new SnapPwdApi(apiUrl);
+
+      // Parse URL
+      const url = new URL(urlStr);
+      const pathParts = url.pathname.split('/');
+      
+      const gIndex = pathParts.indexOf('g');
+      
+      let id: string | undefined;
+      
+      if (gIndex !== -1 && pathParts[gIndex + 1]) {
+        id = pathParts[gIndex + 1];
+      }
+
+      if (!id) {
+         const last = pathParts[pathParts.length - 1];
+         if (last && last.startsWith('sp-')) {
+             id = last;
+         }
+      }
+
+      if (!id) {
+        throw new Error('Could not parse secret ID from URL');
+      }
+
+      if (id.startsWith('spf-')) {
+        throw new Error('Peeking is not currently supported for files.');
+      }
+
+      const response = await api.getSecret(id, true);
+      
+      // Type guard/check
+      if ('encryptedSecret' in response) {
+         // Should not happen if API respects peek=true
+         console.error('Error: API returned the secret instead of metadata. It might have been burned.');
+         return;
+      }
+
+      const meta = response as any; // Cast to access Peek properties safely
+      
+      console.log('--- Secret Metadata ---');
+      console.log(`ID: ${id}`);
+      
+      if (meta.createdAt > 0) {
+        const created = new Date(meta.createdAt * 1000).toLocaleString();
+        console.log(`Created: ${created}`);
+      }
+      
+      if (meta.ttlSeconds === -1) {
+         console.log('Expires: Never');
+      } else if (meta.ttlSeconds === -2) {
+         console.log('Status: Expired or Key Missing');
+      } else {
+         const minutes = Math.floor(meta.ttlSeconds / 60);
+         const seconds = meta.ttlSeconds % 60;
+         console.log(`Expires in: ${minutes}m ${seconds}s`);
+      }
+
+      if (meta.metadata) {
+        console.log('Custom Metadata:', JSON.stringify(meta.metadata, null, 2));
+      }
+
+    } catch (error: any) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
   .command('get <url>')
   .description('Retrieve and decrypt a secret from a URL')
   .option('-o, --output <path>', 'Output path for file (defaults to original filename)')
@@ -172,6 +246,11 @@ program
       } else {
         // Text Secret (default)
         const response = await api.getSecret(id);
+        
+        if (!('encryptedSecret' in response)) {
+             throw new Error('Unexpected response: Received metadata instead of secret.');
+        }
+
         const secret = await decryptData(response.encryptedSecret, key);
         console.log(secret);
       }

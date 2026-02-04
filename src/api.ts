@@ -11,6 +11,12 @@ export interface GetSecretResponse {
   encryptedSecret: string;
 }
 
+export interface SecretPeekResponse {
+  createdAt: number;
+  ttlSeconds: number;
+  metadata?: Record<string, any> | null;
+}
+
 export interface FileMetadata {
   originalFilename: string;
   contentType: string;
@@ -59,8 +65,9 @@ export class SnapPwdApi {
     });
   }
 
-  async getSecret(id: string): Promise<GetSecretResponse> {
-    return this.request<GetSecretResponse>(`/secrets/${id}`);
+  async getSecret(id: string, peek: boolean = false): Promise<GetSecretResponse | SecretPeekResponse> {
+    const url = peek ? `/secrets/${id}?peek=true` : `/secrets/${id}`;
+    return this.request<GetSecretResponse | SecretPeekResponse>(url);
   }
 
   async uploadFile(
