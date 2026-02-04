@@ -82,7 +82,8 @@ export class SnapPwdApi {
     });
   }
 
-  async getFile(id: string): Promise<GetFileResponse> {
-    return this.request<GetFileResponse>(`/files/${id}`);
+  async getFile(id: string, peek: boolean = false): Promise<GetFileResponse | SecretPeekResponse> {
+    const url = peek ? `/files/${id}?peek=true` : `/files/${id}`;
+    return this.request<GetFileResponse | SecretPeekResponse>(url);
   }
 }

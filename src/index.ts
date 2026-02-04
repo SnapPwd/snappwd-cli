@@ -144,13 +144,18 @@ program
       }
 
       if (id.startsWith('spf-')) {
-        throw new Error('Peeking is not currently supported for files.');
+        // File Secret - peek support assumed to exist
       }
 
-      const response = await api.getSecret(id, true);
+      // Check if it's a file ID
+      const isFile = id.startsWith('spf-');
+      
+      const response = isFile 
+        ? await api.getFile(id, true)
+        : await api.getSecret(id, true);
       
       // Type guard/check
-      if ('encryptedSecret' in response) {
+      if ('encryptedSecret' in response || 'encryptedData' in response) {
          // Should not happen if API respects peek=true
          console.error('Error: API returned the secret instead of metadata. It might have been burned.');
          return;
@@ -234,6 +239,10 @@ program
         // File Secret
         const response = await api.getFile(id);
         
+        if (!('encryptedData' in response)) {
+             throw new Error('Unexpected response: Received metadata instead of file.');
+        }
+
         const iv = new Uint8Array(Buffer.from(response.metadata.iv, 'base64'));
         const encryptedData = new Uint8Array(Buffer.from(response.encryptedData, 'base64')).buffer;
 
