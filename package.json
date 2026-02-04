@@ -1,6 +1,6 @@
 {
   "name": "@snappwd/cli",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Official CLI for SnapPwd - Secure, zero-knowledge secret sharing",
   "main": "dist/index.js",
   "bin": {

@@ -176,9 +176,18 @@ program
       } else if (meta.ttlSeconds === -2) {
          console.log('Status: Expired or Key Missing');
       } else {
-         const minutes = Math.floor(meta.ttlSeconds / 60);
+         const days = Math.floor(meta.ttlSeconds / 86400);
+         const hours = Math.floor((meta.ttlSeconds % 86400) / 3600);
+         const minutes = Math.floor((meta.ttlSeconds % 3600) / 60);
          const seconds = meta.ttlSeconds % 60;
-         console.log(`Expires in: ${minutes}m ${seconds}s`);
+         
+         const parts = [];
+         if (days > 0) parts.push(`${days}d`);
+         if (hours > 0) parts.push(`${hours}h`);
+         if (minutes > 0) parts.push(`${minutes}m`);
+         parts.push(`${seconds}s`);
+         
+         console.log(`Expires in: ${parts.join(' ')}`);
       }
 
       if (meta.metadata) {
