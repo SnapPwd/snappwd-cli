@@ -1,6 +1,8 @@
 # SnapPwd CLI
 
-The official command-line interface for [SnapPwd.io](https://snappwd.io).
+[![Live App](https://img.shields.io/badge/Live_App-snappwd.io-00C853?style=for-the-badge&logo=appveyor)](https://snappwd.io)
+
+The official command-line interface for [SnapPwd](https://snappwd.io).
 
 Share secrets and files securely from your terminal. The CLI performs local encryption (AES-GCM) before uploading, ensuring the server never sees your data or keys.
 
