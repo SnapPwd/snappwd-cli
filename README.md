@@ -7,7 +7,7 @@
 
 The official command-line interface for [SnapPwd](https://www.snappwd.io).
 
-Share secrets and files securely from your terminal. The CLI performs local encryption (AES-GCM) before uploading, ensuring the server never sees your data or keys.
+Share secrets and files securely from your terminal. The CLI encrypts the secret text or file contents locally (AES-GCM) before uploading, and the decryption key is never sent to the API. For files, the filename and content type are uploaded unencrypted (see [Security Model](#security-model)).
 
 Full documentation: [snappwd.io/docs/cli](https://www.snappwd.io/docs/cli)
 
@@ -24,13 +24,13 @@ Secret created successfully!
 URL: https://snappwd.io/g/sps-...#...
 ```
 
-Send the URL to the recipient. It can be opened once, in the web app or with `snappwd get`.
+Send the URL to the recipient. It can be opened once, in the hosted web app or with `snappwd get`.
 
 ## Features
 
-- **Zero-Knowledge**: Secrets are encrypted on your machine.
+- **Zero-Knowledge**: Secret text and file contents are encrypted on your machine; the API never receives the key.
 - **Cross-Platform**: Windows, macOS, Linux (via Node.js).
-- **Interoperable**: Secrets created via CLI can be opened in the web app.
+- **Interoperable**: Secrets created with the default hosted API can be opened in the hosted web app at [snappwd.io](https://www.snappwd.io).
 - **Self-Hostable**: Supports custom backends (e.g., your own [snappwd-service](https://github.com/SnapPwd/snappwd-service)).
 
 ## Installation
@@ -117,7 +117,7 @@ snappwd peek "https://snappwd.io/g/sps-...#..." --json
 }
 ```
 
-For files, `metadata` holds the original filename and content type. These are stored unencrypted and are visible to anyone who has the link.
+For files, `metadata` holds the original filename and content type. These are stored unencrypted and are visible to anyone who has the secret's ID, with or without the key.
 
 ### Retrieve a Secret
 
@@ -149,7 +149,7 @@ snappwd put "Internal Secret" --api-url "http://localhost:8080/v1"
 snappwd get "http://localhost:8080/v1/g/sps-...#..." --api-url "http://localhost:8080/v1"
 ```
 
-The printed link is built from the API URL with a trailing `/api/v1` removed. If your API is not served under `<your web app>/api/v1`, replace the part before `/g/` with your web app's address before sharing the link for use in a browser. `snappwd get` and `snappwd peek` read only the ID and the key from the link, so they work either way.
+Retrieve self-hosted shares with `snappwd get` and the same `--api-url`. The printed link is built from the API URL (with a trailing `/api/v1` removed), so it is not a browser address. The current self-hosted web client, [snappwd-web](https://github.com/SnapPwd/snappwd-web), cannot reveal shares created by the CLI: it uses a different link and ciphertext format.
 
 See the [self-hosting guide](https://www.snappwd.io/docs/self-hosting) for running the full stack.
 
@@ -157,8 +157,8 @@ See the [self-hosting guide](https://www.snappwd.io/docs/self-hosting) for runni
 
 1. **Key Gen**: A random AES key is generated locally.
 2. **Encrypt**: Data is encrypted using AES-GCM.
-3. **Upload**: Only the encrypted ciphertext is sent to the server.
-4. **Link**: The CLI generates a link with the key in the URL fragment (`#`). This key never leaves your machine.
+3. **Upload**: The encrypted payload is sent to the server. For files, the original filename and content type are sent with it unencrypted, and anyone who has the ID can read them (for example with `snappwd peek`) without the key.
+4. **Link**: The CLI generates a link with the key in the URL fragment (`#`). The key is not included in any API request, but it travels with the link: anyone who has the complete link can decrypt the secret, so share it only with the intended recipient.
 
 ## License
 
