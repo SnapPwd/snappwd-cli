@@ -4,7 +4,7 @@
   "description": "Official CLI for SnapPwd - Secure, zero-knowledge secret sharing",
   "main": "dist/index.js",
   "bin": {
-    "snappwd": "./dist/index.js"
+    "snappwd": "dist/index.js"
   },
   "files": [
     "dist"
@@ -24,10 +24,24 @@
     "password",
     "secret",
     "sharing",
-    "cli"
+    "cli",
+    "secret-sharing",
+    "one-time-secret",
+    "password-sharing",
+    "zero-knowledge",
+    "self-destructing",
+    "end-to-end-encryption"
   ],
   "author": "SnapPwd",
   "license": "MIT",
+  "homepage": "https://www.snappwd.io/docs/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SnapPwd/snappwd-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SnapPwd/snappwd-cli/issues"
+  },
   "type": "commonjs",
   "dependencies": {
     "commander": "^14.0.3",
