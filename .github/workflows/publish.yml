@@ -1,0 +1,69 @@
+name: Publish to npm
+
+# Publishes @snappwd/cli whenever the version in package.json on main differs
+# from the latest version on npm. No tokens: npm trusted publishing (OIDC).
+# To release: bump "version" in package.json in a PR and merge it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - src/**
+      - tsconfig.json
+      - .github/workflows/publish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Use an npm version that supports trusted publishing
+        run: npm install -g npm@latest && npm --version
+      - name: Compare package.json with npm
+        id: version
+        run: |
+          local_version=$(node -p "require('./package.json').version")
+          published_version=$(npm view "$(node -p "require('./package.json').name")" version 2>/dev/null || echo "none")
+          echo "local=$local_version" >> "$GITHUB_OUTPUT"
+          echo "published=$published_version" >> "$GITHUB_OUTPUT"
+          if [ "$local_version" = "$published_version" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Version $local_version is already on npm; nothing to publish."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Publishing $local_version (npm has $published_version)."
+          fi
+      - if: steps.version.outputs.changed == 'true'
+        run: npm ci
+      - if: steps.version.outputs.changed == 'true'
+        run: npm run build
+      - if: steps.version.outputs.changed == 'true'
+        run: node dist/index.js --help
+      - if: steps.version.outputs.changed == 'true'
+        name: Publish with provenance
+        run: npm publish --access public --provenance
+      - if: steps.version.outputs.changed == 'true'
+        name: Tag and create a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.local }}
+        run: |
+          git tag "v$VERSION" "$GITHUB_SHA"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes --verify-tag
