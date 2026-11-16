@@ -49,6 +49,7 @@ This installs the `snappwd` command. Every example below also works without inst
 | `snappwd put-file <filePath>` | Encrypt and share a file |
 | `snappwd peek <url>` | Show a secret's metadata without consuming it |
 | `snappwd get <url>` | Retrieve and decrypt a secret or file (consumes it) |
+| `snappwd mcp` | Run a local MCP server for AI agents (see [Use with AI Agents](#use-with-ai-agents-mcp)) |
 
 Run `snappwd --help` or `snappwd <command> --help` for the built-in reference.
 
@@ -135,6 +136,40 @@ snappwd get "https://snappwd.io/g/spf-...#..." -o ./restored.env
 
 Quote the URL so your shell keeps the `#...` part, which carries the decryption key.
 
+## Use with AI Agents (MCP)
+
+`snappwd mcp` runs a local [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so Claude Code, Claude Desktop, Cursor, Codex and other MCP clients can create and open one-time links directly.
+
+**Claude Code:**
+
+```bash
+claude mcp add snappwd -- npx -y @snappwd/cli mcp
+```
+
+**Claude Desktop, Cursor and other clients** (`claude_desktop_config.json`, `.cursor/mcp.json`, ...):
+
+```json
+{
+  "mcpServers": {
+    "snappwd": {
+      "command": "npx",
+      "args": ["-y", "@snappwd/cli", "mcp"]
+    }
+  }
+}
+```
+
+| Tool | What it does |
+|------|--------------|
+| `create_secret` | Encrypt `text` and return a one-time link. Optional `expiration_seconds` (default 3600, 60 to 2592000) |
+| `create_file_secret` | Encrypt the file at `path` and return a one-time link. Optional `expiration_seconds` (default 86400) |
+| `peek_secret` | Show a link's creation time and time left without consuming it |
+| `get_secret` | Open a link. This burns the secret, and for text the plaintext enters the agent's context. Files are saved to disk (`output_path`, or the original filename in the working directory) |
+
+Zero-knowledge holds here too: the MCP server is the same local process as the CLI. It encrypts and decrypts on your machine, the API only receives ciphertext, and the key stays in the link's `#` fragment. There is no hosted MCP endpoint.
+
+To use a self-hosted service, set `SNAPPWD_API_URL` (for example `"env": { "SNAPPWD_API_URL": "http://localhost:8080/v1" }`) or pass `--api-url` before `mcp`: `npx -y @snappwd/cli --api-url http://localhost:8080/v1 mcp`.
+
 ## Self-Hosting
 
 If you are running your own [SnapPwd Service](https://github.com/SnapPwd/snappwd-service), point the CLI to it with `--api-url`. The value is the service's base URL including `/v1`; the default is `https://api.snappwd.io/v1`.
@@ -143,7 +178,7 @@ If you are running your own [SnapPwd Service](https://github.com/SnapPwd/snappwd
 snappwd put "Internal Secret" --api-url "http://localhost:8080/v1"
 ```
 
-`--api-url` works with every command:
+`--api-url` works with every command. You can also set it once with the `SNAPPWD_API_URL` environment variable:
 
 ```bash
 snappwd get "http://localhost:8080/v1/g/sps-...#..." --api-url "http://localhost:8080/v1"

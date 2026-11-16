@@ -1,0 +1,40 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.SnapPwd/snappwd-cli",
+  "title": "SnapPwd",
+  "description": "Share passwords, secrets and files as one-time, expiring links, encrypted locally (zero-knowledge).",
+  "websiteUrl": "https://www.snappwd.io/docs/cli",
+  "repository": {
+    "url": "https://github.com/SnapPwd/snappwd-cli",
+    "source": "github",
+    "id": "1148286259"
+  },
+  "version": "1.4.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@snappwd/cli",
+      "version": "1.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "SNAPPWD_API_URL",
+          "description": "Base URL of a self-hosted snappwd-service, including /v1. Leave unset to use the hosted SnapPwd API.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "placeholder": "http://localhost:8080/v1"
+        }
+      ]
+    }
+  ]
+}
