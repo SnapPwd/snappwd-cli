@@ -16,6 +16,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const CLI = path.resolve('dist/index.js');
 const store = new Map();
 const requests = [];
+let onBurn = null; // test hook: runs just before the mock deletes a secret
 let server;
 let apiUrl;
 let client;
@@ -52,6 +53,7 @@ function startMockService() {
             metadata: entry.payload.metadata ?? null,
           });
         }
+        onBurn?.(id);
         store.delete(id); // one-time
         return send(200, kind === 'files'
           ? { metadata: entry.payload.metadata, encryptedData: entry.payload.encryptedData }
@@ -85,15 +87,20 @@ before(async () => {
   await startMockService();
   apiUrl = `http://127.0.0.1:${server.address().port}/v1`;
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'snappwd-mcp-'));
-  client = new Client({ name: 'snappwd-test', version: '0.0.0' });
-  await client.connect(new StdioClientTransport({
+  client = await spawnClient(tmp);
+});
+
+const spawnClient = async (cwd) => {
+  const c = new Client({ name: 'snappwd-test', version: '0.0.0' });
+  await c.connect(new StdioClientTransport({
     command: process.execPath,
     args: [CLI, 'mcp'],
     env: { ...process.env, SNAPPWD_API_URL: apiUrl },
-    cwd: tmp,
+    cwd,
     stderr: 'ignore',
   }));
-});
+  return c;
+};
 
 after(async () => {
   await client?.close();
@@ -193,6 +200,83 @@ test('get_secret keeps a stored filename inside the working directory', async ()
   const opened = await call('get_secret', { url: created.data.url });
   assert.equal(opened.isError, false, opened.text);
   assert.equal(opened.data.saved_to, path.join(fs.realpathSync(tmp), 'escape.txt'));
+});
+
+const createFile = async (name, contents) => {
+  const source = path.join(tmp, name);
+  fs.writeFileSync(source, contents);
+  const created = await call('create_file_secret', { path: source });
+  assert.equal(created.isError, false, created.text);
+  return created.data.url;
+};
+
+test('get_secret refuses a missing output directory without burning the file', async () => {
+  const url = await createFile('missing-dir.env', 'SECRET=1');
+  const refused = await call('get_secret', { url, output_path: path.join(tmp, 'nope', 'x.env') });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /Cannot write to .*nope.*not opened/);
+  assert.equal((await call('peek_secret', { url })).isError, false, 'the secret must survive');
+});
+
+test('get_secret refuses an unwritable working directory without burning the file', async (t) => {
+  if (process.getuid?.() === 0) return t.skip('root can write to read-only directories');
+  const ro = fs.mkdtempSync(path.join(tmp, 'ro-'));
+  fs.chmodSync(ro, 0o555);
+  const roClient = await spawnClient(ro);
+  try {
+    const url = await createFile('ro-cwd.env', 'SECRET=2');
+    const result = await roClient.callTool({ name: 'get_secret', arguments: { url } });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /Cannot write to .*output_path.*not opened/);
+    assert.equal((await call('peek_secret', { url })).isError, false, 'the secret must survive');
+  } finally {
+    await roClient.close();
+    fs.chmodSync(ro, 0o755);
+  }
+});
+
+test('get_secret saves a burned file to a temp directory when the write fails', async () => {
+  const contents = `RACE=${randomBytes(6).toString('hex')}`;
+  const url = await createFile('race-source.env', contents);
+  const target = path.join(tmp, 'race.env');
+  // Simulate a race: the target appears after the pre-check but before the write.
+  onBurn = () => fs.writeFileSync(target, 'someone else');
+  try {
+    const opened = await call('get_secret', { url, output_path: target });
+    assert.equal(opened.isError, false, opened.text);
+    assert.notEqual(opened.data.saved_to, target);
+    assert.equal(path.dirname(path.dirname(opened.data.saved_to)), os.tmpdir());
+    assert.match(opened.data.note, /already burned/);
+    assert.equal(fs.readFileSync(opened.data.saved_to, 'utf8'), contents);
+    assert.equal(fs.statSync(opened.data.saved_to).mode & 0o777, 0o600);
+    assert.equal(fs.readFileSync(target, 'utf8'), 'someone else', 'the existing file is not replaced');
+    fs.rmSync(path.dirname(opened.data.saved_to), { recursive: true, force: true });
+  } finally {
+    onBurn = null;
+  }
+});
+
+test('CLI get does not overwrite an existing file with the stored filename', async () => {
+  const run = promisify(execFile);
+  const dir = fs.mkdtempSync(path.join(tmp, 'cli-get-'));
+  const source = path.join(dir, '.bashrc');
+  fs.writeFileSync(source, 'incoming');
+  const put = await run(process.execPath, [CLI, 'put-file', source, '--api-url', apiUrl]);
+  const url = put.stdout.match(/URL: (\S+)/)[1];
+  fs.writeFileSync(source, 'original'); // the recipient's own .bashrc
+  const get = await run(process.execPath, [CLI, 'get', url, '--api-url', apiUrl], { cwd: dir });
+  const saved = get.stdout.match(/File saved to: (\S+)/)[1];
+  assert.notEqual(saved, '.bashrc');
+  assert.equal(fs.readFileSync(source, 'utf8'), 'original');
+  assert.equal(fs.readFileSync(path.join(dir, saved), 'utf8'), 'incoming');
+});
+
+test('server.json versions match package.json', () => {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const server = JSON.parse(fs.readFileSync('server.json', 'utf8'));
+  assert.equal(server.name, pkg.mcpName);
+  assert.equal(server.version, pkg.version);
+  assert.deepEqual(server.packages.map((p) => [p.identifier, p.version]), [[pkg.name, pkg.version]]);
 });
 
 test('CLI put/peek/get still work through the shared code', async () => {

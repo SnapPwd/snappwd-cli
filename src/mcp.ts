@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -12,6 +13,7 @@ import {
   createTextSecret,
   createFileSecret,
   peekSecret,
+  parseSecretUrl,
   retrieveSecret,
   safeFilename,
 } from './secrets';
@@ -52,6 +54,31 @@ const created = (secret: CreatedSecret) => ({
   expiration_seconds: secret.expirationSeconds,
   note: 'One-time link: it works once, then the secret is deleted. The key is in the #fragment; share the full URL only with the intended recipient.',
 });
+
+/**
+ * Refuse a file target that cannot be written, before the secret is burned:
+ * an existing output_path, or a missing or read-only directory. GUI clients
+ * often start the server in a directory the user cannot write to (such as /).
+ */
+function assertWritableTarget(outputPath: string | undefined): void {
+  const target = outputPath ? path.resolve(outputPath) : undefined;
+  if (target && fs.existsSync(target)) {
+    throw new Error(`Output path already exists: ${target}. The secret was not opened.`);
+  }
+
+  const dir = target ? path.dirname(target) : process.cwd();
+  try {
+    if (!fs.statSync(dir).isDirectory()) {
+      throw new Error('not a directory');
+    }
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch {
+    throw new Error(
+      `Cannot write to ${dir}. Pass output_path as an absolute path in a writable directory. ` +
+        'The secret was not opened.'
+    );
+  }
+}
 
 export function createMcpServer(apiUrl: string): McpServer {
   const server = new McpServer(
@@ -165,9 +192,9 @@ export function createMcpServer(apiUrl: string): McpServer {
     },
     async ({ url, output_path }) => {
       try {
-        // Refuse to overwrite before burning the secret, so a bad path cannot lose it.
-        if (output_path && fs.existsSync(path.resolve(output_path))) {
-          throw new Error(`Output path already exists: ${path.resolve(output_path)}`);
+        // Everything that can be checked is checked before the secret is burned.
+        if (parseSecretUrl(url).isFile) {
+          assertWritableTarget(output_path);
         }
 
         const secret = await retrieveSecret(apiUrl, url);
@@ -181,7 +208,21 @@ export function createMcpServer(apiUrl: string): McpServer {
           const { name, ext } = path.parse(outputPath);
           outputPath = path.join(path.dirname(outputPath), `${name}-${secret.id}${ext}`);
         }
-        fs.writeFileSync(outputPath, secret.data, { flag: 'wx', mode: 0o600 });
+
+        // The secret is burned now, so a failed write must not lose it
+        // (race, full disk, collision): fall back to a private temp directory.
+        let note: string | undefined;
+        try {
+          fs.writeFileSync(outputPath, secret.data, { flag: 'wx', mode: 0o600 });
+        } catch (writeError) {
+          const fallbackDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snappwd-'));
+          const fallbackPath = path.join(fallbackDir, path.basename(outputPath));
+          fs.writeFileSync(fallbackPath, secret.data, { flag: 'wx', mode: 0o600 });
+          note =
+            `Could not write ${outputPath} (${writeError instanceof Error ? writeError.message : String(writeError)}). ` +
+            `The secret is already burned, so the file was saved to ${fallbackPath} instead.`;
+          outputPath = fallbackPath;
+        }
 
         return json({
           id: secret.id,
@@ -190,6 +231,7 @@ export function createMcpServer(apiUrl: string): McpServer {
           original_filename: secret.metadata.originalFilename,
           content_type: secret.metadata.contentType,
           size_bytes: secret.data.length,
+          ...(note ? { note } : {}),
         });
       } catch (error) {
         return toolError(error);

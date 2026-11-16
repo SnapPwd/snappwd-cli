@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import fs from 'node:fs';
+import path from 'node:path';
 import { VERSION } from './version';
 import {
   DEFAULT_API_URL,
@@ -132,8 +133,19 @@ program
       const secret = await retrieveSecret(apiUrl, urlStr);
 
       if (secret.kind === 'file') {
-        const outputPath = options.output || safeFilename(secret.metadata.originalFilename);
-        fs.writeFileSync(outputPath, secret.data);
+        let outputPath: string = options.output;
+        if (outputPath) {
+          fs.writeFileSync(outputPath, secret.data);
+        } else {
+          // The stored filename is chosen by the sender: never let it replace
+          // an existing file (e.g. .bashrc in ~). Add the ID on a collision.
+          outputPath = safeFilename(secret.metadata.originalFilename);
+          if (fs.existsSync(outputPath)) {
+            const { name, ext } = path.parse(outputPath);
+            outputPath = `${name}-${secret.id}${ext}`;
+          }
+          fs.writeFileSync(outputPath, secret.data, { flag: 'wx' });
+        }
         
         console.log(`File saved to: ${outputPath}`);
       } else {
